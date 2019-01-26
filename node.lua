@@ -9,8 +9,6 @@
 -- Full license
 -- https://git.ale32bit.me/Ale32bit/Node.lua/src/branch/master/LICENSE
 
-local node = {}
-
 -- utils
 
 local function genHex()
@@ -39,7 +37,7 @@ end
 
 -- Node functions
 
-function node.on(event, func)
+local function on(event, func)
 	assert(type(event) == "string", "bad argument #1 (expected string, got ".. type(func) ..")")
 	assert(type(func) == "function", "bad argument #2 (expected function, got ".. type(func) ..")")
 	local listener = {}
@@ -64,7 +62,7 @@ function node.on(event, func)
 	return listener
 end
 
-function node.removeListener(listener)
+local function removeListener(listener)
 	assert(type(listener) == "table", "bad argument #1 (expected listener, got ".. type(listener) ..")")
 	local id = listener.id
 	assert(id, "bad argument #1 (expected listener, got ".. type(listener) ..")")
@@ -79,7 +77,7 @@ function node.removeListener(listener)
 	return true
 end
 
-function node.setInterval(func, s, ...)
+local function setInterval(func, s, ...)
 	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
 	s = s or 0
 	assert(type(s) == "number", "bad argument #2 (expected number, got ".. type(s) ..")")
@@ -111,7 +109,7 @@ function node.setInterval(func, s, ...)
 	return interval
 end
 
-function node.clearInterval(interval)
+local function clearInterval(interval)
 	assert(type(interval) == "table", "bad argument #1 (expected interval, got ".. type(interval) ..")")
 	local id = interval.id
 	assert(id, "bad argument #1 (expected interval, got ".. type(interval) ..")")
@@ -126,7 +124,7 @@ function node.clearInterval(interval)
 	return true
 end
 
-function node.setTimeout(func, s, ...)
+local function setTimeout(func, s, ...)
 	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
 	s = s or 0
 	assert(type(s) == "number", "bad argument #2 (expected number, got ".. type(s) ..")")
@@ -156,7 +154,7 @@ function node.setTimeout(func, s, ...)
 	return interval
 end
 
-function node.clearTimeout(interval)
+local function clearTimeout(interval)
 	assert(type(interval) == "table", "bad argument #1 (expected timeout, got ".. type(interval) ..")")
 	local id = interval.id
 	assert(id, "bad argument #1 (expected timeout, got ".. type(interval) ..")")
@@ -170,7 +168,12 @@ function node.clearTimeout(interval)
 	return true
 end
 
-function node.init()
+local function spawnFunction(func)
+	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
+	spawn(func)
+end
+
+local function init()
 	while (function() 
 		local c = 0
 		for k,v in pairs(procs) do
@@ -202,4 +205,13 @@ function node.init()
 end
 
 
-return node
+return {
+	on = on,
+	removeListener = removeListener,
+	setInterval = setInterval,
+	clearInterval = clearInterval,
+	setTimeout = setTimeout,
+	clearTimeout = clearTimeout,
+	spawn = spawnFunction,
+	init = init,
+}
