@@ -49,7 +49,7 @@ local function on(event, func)
 	listener.pid = spawn(function()
 		while listener.run do
 			local ev = {os.pullEvent(event)}
-			listener.func(unpack(ev, 2))
+			spawn(function() listener.func(unpack(ev, 2)) end)
 		end
 	end)
 	
@@ -89,14 +89,11 @@ local function setInterval(func, s, ...)
 	interval.run = true
 	interval.stopped = false
 	interval.pid = spawn(function()
-		while interval.run do
-			local timer = os.startTimer(interval.interval)
-			local _, p = os.pullEvent("timer")
-			if p == timer then
-				spawn(function()
-					interval.func(unpack(interval.args))
-				end)
-			end
+		while true do
+			sleep(interval.interval)
+			spawn(function()
+				interval.func(unpack(interval.args))
+			end)
 		end
 	end)
 	
@@ -135,14 +132,11 @@ local function setTimeout(func, s, ...)
 	interval.id = genHex()
 	interval.stopped = false
 	interval.pid = spawn(function()
-		local timer = os.startTimer(interval.timeout)
-		local _, p = os.pullEvent("timer")
-		if p == timer then
-			spawn(function()
-				interval.func(unpack(interval.args))
-				interval.stopped = true
-			end)
-		end
+		sleep(interval.timeout)
+		spawn(function()
+			interval.func(unpack(interval.args))
+			interval.stopped = true
+		end)
 	end)
 	
 	interval = setmetatable(interval, {
@@ -202,7 +196,6 @@ local function init()
 		for k,v in pairs(procs) do
 			c = c+1
 		end
-		
 		return c > 0
 	end)() do
 		local event = {coroutine.yield()}
