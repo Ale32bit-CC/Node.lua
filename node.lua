@@ -184,6 +184,80 @@ local function spawnFunction(func)
 	return thread
 end
 
+local function promise(func, errorOnUncaught) -- errorOnUncaught is temporary
+	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
+	
+	local promise = {}
+	promise.id = genHex()
+	promise.status = "pending" -- "resolved", "rejected"
+	promise.value = nil
+	
+	promise.success = function(func)
+		assert(type(func) == "function", "bad argument (expected function, got ".. type(func) ..")")
+		promise.__then = func
+	end
+	
+	promise.catch = function(func)
+		assert(type(func) == "function", "bad argument (expected function, got ".. type(func) ..")")
+		promise.__catch = func
+	end
+	
+	promise.finally = function(func)
+		assert(type(func) == "function", "bad argument (expected function, got ".. type(func) ..")")
+		promise.__finally = func
+	end
+	
+	local resolve = function(...)
+		promise.value = {...}
+		promise.status = "resolved"
+		if promise.__then then
+			spawn(function()
+				promise.__then(unpack(promise.value))
+			end)
+		end
+		if promise.__finally then
+			spawn(promise.__finally)
+		end
+		kill(promise.pid)
+	end
+	
+	local reject = function(...)
+		promise.value = {...}
+		promise.status = "rejected"
+		if promise.__catch then
+			spawn(function()
+				promise.__catch(unpack(promise.value))
+			end)
+		else
+			if errorOnUncaught then
+				local val = {}
+				for k, v in ipairs(promise.value) do
+					val[k] = tostring(v)
+				end
+				error("Uncaught (in promise) "..table.concat(promise.value, " "), 2)
+			else
+				printError("Uncaught (in promise)", unpack(promise.value))
+			end
+		end
+		if promise.__finally then
+			spawn(promise.__finally)
+		end
+		kill(promise.pid)
+	end
+	
+	promise.pid = spawn(function()
+		func(resolve, reject)
+	end)
+	
+	promise = setmetatable(promise, {
+		__tostring = function()
+			return string.format("Promise 0x%x [%s] (%s)", promise.id, promise.status, tostring(promise.value) or "nil")
+		end,
+	})
+	
+	return promise
+end
+
 local isRunning = false
 
 local function init()
@@ -222,6 +296,10 @@ local function init()
 	isRunning = false
 end
 
+local function status()
+	return isRunning
+end
+
 
 return {
 	on = on,
@@ -231,5 +309,6 @@ return {
 	setTimeout = setTimeout,
 	clearTimeout = clearTimeout,
 	spawn = spawnFunction,
+	promise = promise,
 	init = init,
 }
