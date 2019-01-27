@@ -89,7 +89,7 @@ local function setInterval(func, s, ...)
 	interval.run = true
 	interval.stopped = false
 	interval.pid = spawn(function()
-		while true do
+		while interval.run do
 			sleep(interval.interval)
 			spawn(function()
 				interval.func(unpack(interval.args))
