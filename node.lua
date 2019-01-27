@@ -170,10 +170,33 @@ end
 
 local function spawnFunction(func)
 	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
-	spawn(func)
+	local pid = spawn(func)
+	local thread = {}
+	thread.pid = pid
+	thread.kill = function()
+		return kill(pid)
+	end
+	thread.status = function()
+		return coroutine.status(procs[pid].thread)
+	end
+	
+	local tostr = string.format("Thread 0x%s [%s] (%s)", string.match(tostring(procs[pid].thread),"%w+$"), thread.pid, string.match(tostring(func),"%w+$"))
+	
+	thread = setmetatable(thread, {
+		__tostring = function()
+			return tostr
+		end,
+	})
+	return thread
 end
 
+local isRunning = false
+
 local function init()
+	if isRunning then
+		error("Node Event Loop already running", 2)
+	end
+	isRunning = true
 	while (function() 
 		local c = 0
 		for k,v in pairs(procs) do
@@ -190,6 +213,7 @@ local function init()
 				if proc.filter == nil or proc.filter == event[1] or event[1] == "terminate" then
 					local ok, par = coroutine.resume( proc.thread, unpack(event))
 					if not ok then
+						isRunning = false
 						error(par, 0)
 						break
 					else
@@ -202,6 +226,7 @@ local function init()
 			end
 		end
 	end
+	isRunning = false
 end
 
 
