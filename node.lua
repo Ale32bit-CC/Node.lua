@@ -192,7 +192,7 @@ local function promise(func, errorOnUncaught) -- errorOnUncaught is temporary
 	promise.status = "pending" -- "resolved", "rejected"
 	promise.value = nil
 	
-	promise.success = function(func)
+	promise.bind = function(func)
 		assert(type(func) == "function", "bad argument (expected function, got ".. type(func) ..")")
 		promise.__then = func
 	end
