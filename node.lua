@@ -301,7 +301,7 @@ local function status()
 end
 
 
-return {
+local node = {
 	on = on,
 	removeListener = removeListener,
 	setInterval = setInterval,
@@ -312,3 +312,7 @@ return {
 	promise = promise,
 	init = init,
 }
+
+_ENV.node = node
+
+return node
