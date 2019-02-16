@@ -1,305 +1,362 @@
--- Node.lua
--- By Ale32bit
+--[[
 
--- https://git.ale32bit.me/Ale32bit/Node.lua
+	Node.lua by Ale32bit
+	https://github.com/Ale32bit-CC/Node.lua
 
--- MIT License
--- Copyright (c) 2019 Alessandro "Ale32bit"
+	MIT License
 
--- Full license
--- https://git.ale32bit.me/Ale32bit/Node.lua/src/branch/master/LICENSE
+	Copyright (c) 2019 Ale32bit
 
--- utils
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
 
-local function genHex()
-	local rand = math.floor(math.random() * math.floor(16^8))
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
 	
-	return rand
+	
+	-- DOCUMENTATION --
+	
+	To start:
+	
+	local node = require("node")
+	
+	Functions:
+	
+	node.on( event, callback ): Event name (string), Callback (function)
+	Returns table with listener details and thread
+	
+	node.removeListener( listener ): Listener (table)
+	Returns boolean if success
+	
+	node.setInterval( callback, interval, [...] ): Callback (function), Interval in seconds (number), ...Arguments for callback (anything)
+	Returns table with interval details and thread
+	
+	node.clearInterval( interval ): Interval (table)
+	Returns boolean if success
+	
+	node.setTimeout( callback, timeout, [...] ): Callback (function), Timeout in seconds (number), ...Arguments for callback (anything)
+	Returns table with timeout details and thread
+	
+	node.clearTimeout( timeout ): Timeout (table)
+	Returns boolean if success
+	
+	node.spawn( function ): Function to execute in the coroutine manager (function)
+	Returns table containing details and methods
+	
+	node.promise( executor, [options] ): Executor (function), Options (table): options.errorOnUncaught (boolean) use error() or just printError in case of uncaught reject
+	Returns table, 3 functions: bind(cb) on fulfill, catch(cb) on reject and finally(cb) after these functions. They all want callback functions.
+	
+	node.init(): Start the event loop engine !! REQUIRED TO RUN !!
+	
+	node.isRunning(): Check if event loop engine is running
+	Returns boolean
+	
+]]--
+
+
+-- Variables --
+
+local isRunning = false
+local threads = {} -- Store all threads here
+
+-- Utils --
+
+local function assertType(v, exp, n, level)
+	n = n or 1
+	level = level or 3
+	if type(v) ~= exp then
+		error("bad argument #"..n.." (expected "..exp..", got "..type(v)..")", level)
+	end
 end
 
--- coroutine manager
+-- Thread functions --
 
-local procs = {}
+local function killThread(pid) -- Kill a thread
+	assertType(pid, "number", 1, 2)
+	if threads[pid] then
+		threads[pid].tokill = true
+		return true
+	end
+	return false
+end
 
-local function spawn(func)
-	local id = #procs + 1
-	procs[id] = {
-		kill = false,
-		thread = coroutine.create(func),
+local function spawnThread(f) -- Spawn new thread
+	assertType(f, "function", 1, 2)
+	local pid = #threads + 1
+	local thread = {
+		tokill = false,
+		thread = coroutine.create(f),
 		filter = nil,
+		pid = pid,
 	}
-	return id
-end
-
-local function kill(pid)
-	procs[pid].kill = true
-end
-
--- Node functions
-
-local function on(event, func)
-	assert(type(event) == "string", "bad argument #1 (expected string, got ".. type(func) ..")")
-	assert(type(func) == "function", "bad argument #2 (expected function, got ".. type(func) ..")")
-	local listener = {}
-	listener.event = event
-	listener.func = func
-	listener.id = genHex()
-	listener.run = true
-	listener.stopped = false
-	listener.pid = spawn(function()
-		while listener.run do
-			local ev = {os.pullEvent(event)}
-			spawn(function() listener.func(unpack(ev, 2)) end)
-		end
-	end)
-	
-	listener = setmetatable(listener, {
-		__tostring = function()
-			return string.format("Listener 0x%x [%s] (%s)", listener.id, event, string.match(tostring(func),"%w+$"))
+	thread = setmetatable(thread, {
+		__index = {
+			kill = function(self)
+				killThread(self.pid)
+			end,
+			status = function(self)
+				return coroutine.status(self.thread)
+			end,
+		},
+		
+		__tostring = function(self)
+			return "Thread "..self.pid..": "..self:status()
 		end,
 	})
+	threads[pid] = thread
+	return thread, pid
+end
+
+-- Node functions --
+
+-- Event Listener
+local function on(event, callback)
+	assertType(event, "string", 1)
+	assertType(callback, "function", 2)
+	
+	-- Create listener
+	local listener = {}
+	listener.event = event
+	listener.callback = callback
+	listener.run = true
+	listener.stopped = false
+	listener.thread = spawnThread(function()
+		while listener.run do
+			local ev = {os.pullEvent(listener.event)}
+			spawnThread(function() listener.callback(unpack(ev, 2)) end)
+		end
+	end)
 	
 	return listener
 end
 
+
+-- Remove event listener
 local function removeListener(listener)
-	assert(type(listener) == "table", "bad argument #1 (expected listener, got ".. type(listener) ..")")
-	local id = listener.id
-	assert(id, "bad argument #1 (expected listener, got ".. type(listener) ..")")
-	
+	assert(listener, "table")
+	if not listener.thread then
+		error("bad argument #1 (expected Event Listener)", 2)
+	end
 	if listener.stopped then
 		return false
 	end
-	
 	listener.run = false
 	listener.stopped = true
-	kill(listener.pid)
+	killThread(listener.thread.pid)
 	return true
 end
 
-local function setInterval(func, s, ...)
-	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
+-- Create new interval
+local function setInterval(callback, s, ...)
+	assertType(callback, "function", 1)
 	s = s or 0
-	assert(type(s) == "number", "bad argument #2 (expected number, got ".. type(s) ..")")
+	assertType(s, "number", 2)
+	
 	local interval = {}
 	interval.interval = s
-	interval.func = func
+	interval.callback = callback
 	interval.args = {...}
-	interval.id = genHex()
 	interval.run = true
 	interval.stopped = false
-	interval.pid = spawn(function()
+	interval.thread = spawnThread(function()
 		while interval.run do
-			sleep(interval.interval)
-			spawn(function()
-				interval.func(unpack(interval.args))
+			local timer = os.startTimer( interval.interval )
+			repeat
+				local _, t = os.pullEvent("timer")
+			until t == timer
+			spawnThread(function()
+				interval.callback(unpack(interval.args))
 			end)
 		end
 	end)
 	
-	interval = setmetatable(interval, {
-		__tostring = function()
-			return string.format("Interval 0x%x [%s]s (%s)", interval.id, s, string.match(tostring(func),"%w+$"))
-		end,
-	})
-	
 	return interval
 end
 
+-- Clear interval
 local function clearInterval(interval)
-	assert(type(interval) == "table", "bad argument #1 (expected interval, got ".. type(interval) ..")")
-	local id = interval.id
-	assert(id, "bad argument #1 (expected interval, got ".. type(interval) ..")")
-	
+	assert(interval, "table")
+	if not interval.thread then
+		error("bad argument #1 (expected Interval)", 2)
+	end
 	if interval.stopped then
 		return false
 	end
 	
 	interval.run = false
 	interval.stopped = true
-	kill(interval.pid)
+	killThread(interval.thread.pid)
 	return true
 end
 
-local function setTimeout(func, s, ...)
-	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
+-- Create new timeout
+local function setTimeout(callback, s, ...)
+	assertType(callback, "function", 1)
 	s = s or 0
-	assert(type(s) == "number", "bad argument #2 (expected number, got ".. type(s) ..")")
-	local interval = {}
-	interval.timeout = s
-	interval.func = func
-	interval.args = {...}
-	interval.id = genHex()
-	interval.stopped = false
-	interval.pid = spawn(function()
-		sleep(interval.timeout)
-		spawn(function()
-			interval.func(unpack(interval.args))
-			interval.stopped = true
-		end)
+	assertType(s, "number", 2)
+	
+	local timeout = {}
+	timeout.timeout = s
+	timeout.callback = callback
+	timeout.args = {...}
+	timeout.stopped = false
+	timeout.thread = spawnThread(function()
+		local timer = os.startTimer( timeout.timeout )
+		repeat
+			local _, t = os.pullEvent("timer")
+		until t == timer
+		timeout.callback(unpack(timeout.args))
 	end)
 	
-	interval = setmetatable(interval, {
-		__tostring = function()
-			return string.format("Timeout 0x%x [%s]s (%s)", interval.id, s, string.match(tostring(func),"%w+$"))
-		end,
-	})
-	
-	return interval
+	return timeout
 end
 
-local function clearTimeout(interval)
-	assert(type(interval) == "table", "bad argument #1 (expected timeout, got ".. type(interval) ..")")
-	local id = interval.id
-	assert(id, "bad argument #1 (expected timeout, got ".. type(interval) ..")")
-	
-	if interval.stopped then
+-- Clear timeout
+local function clearTimeout(timeout)
+	assert(timeout, "table")
+	if not timeout.thread then
+		error("bad argument #1 (expected Timeout)", 2)
+	end
+	if timeout.stopped then
 		return false
 	end
 	
-	interval.stopped = true
-	kill(interval.pid)
+	timeout.stopped = true
+	killThread(timeout.thread.pid)
 	return true
 end
 
-local function spawnFunction(func)
-	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
-	local pid = spawn(func)
-	local thread = {}
-	thread.pid = pid
-	thread.kill = function()
-		return kill(pid)
-	end
-	thread.status = function()
-		return coroutine.status(procs[pid].thread)
-	end
-	
-	local tostr = string.format("Thread 0x%s [%s] (%s)", string.match(tostring(procs[pid].thread),"%w+$"), thread.pid, string.match(tostring(func),"%w+$"))
-	
-	thread = setmetatable(thread, {
-		__tostring = function()
-			return tostr
-		end,
-	})
-	return thread
-end
-
-local function promise(func, errorOnUncaught) -- errorOnUncaught is temporary
-	assert(type(func) == "function", "bad argument #1 (expected function, got ".. type(func) ..")")
+-- New promise
+local function promise(executor, options)
+	assertType(executor, "function", 1)
+	options = options or {}
+	options.errorOnUncaught = options.errorOnUncaught or false
+	assertType(options, "table", 2)
 	
 	local promise = {}
-	promise.id = genHex()
-	promise.status = "pending" -- "resolved", "rejected"
+	promise.options = options
+	promise.status = "pending"
 	promise.value = nil
 	
-	promise.bind = function(func)
-		assert(type(func) == "function", "bad argument (expected function, got ".. type(func) ..")")
-		promise.__then = func
+	promise.bind = function( callback )
+		assertType(callback, "function")
+		promise.__bind = callback
 	end
 	
-	promise.catch = function(func)
-		assert(type(func) == "function", "bad argument (expected function, got ".. type(func) ..")")
-		promise.__catch = func
+	promise.catch = function( callback )
+		assertType(callback, "function")
+		promise.__catch = callback
 	end
 	
-	promise.finally = function(func)
-		assert(type(func) == "function", "bad argument (expected function, got ".. type(func) ..")")
-		promise.__finally = func
+	promise.finally = function( callback )
+		assertType(callback, "function")
+		promise.__finally = callback
 	end
 	
-	local resolve = function(...)
-		promise.value = {...}
+	promise.__resolve = function( value )
 		promise.status = "resolved"
-		if promise.__then then
-			spawn(function()
-				promise.__then(unpack(promise.value))
+		promise.value = value
+		killThread(promise.thread.pid)
+		if promise.__bind then
+			spawnThread(function()
+				promise.__bind(value)
 			end)
 		end
 		if promise.__finally then
-			spawn(promise.__finally)
+			spawnThread(promise.__finally)
 		end
-		kill(promise.pid)
+		return value
+		
 	end
 	
-	local reject = function(...)
-		promise.value = {...}
+	promise.__reject = function( reason )
 		promise.status = "rejected"
+		promise.value = reason
+		killThread(promise.thread.pid)
 		if promise.__catch then
-			spawn(function()
-				promise.__catch(unpack(promise.value))
+			spawnThread(function()
+				promise.__catch(reason)
 			end)
 		else
-			if errorOnUncaught then
-				local val = {}
-				for k, v in ipairs(promise.value) do
-					val[k] = tostring(v)
-				end
-				error("Uncaught (in promise) "..table.concat(promise.value, " "), 2)
+			if promise.options.errorOnUncaught then
+				error("Uncaught (in promise) "..tostring(reason), 3)
 			else
-				printError("Uncaught (in promise)", unpack(promise.value))
+				printError("Uncaught (in promise) "..tostring(reason))
 			end
 		end
 		if promise.__finally then
-			spawn(promise.__finally)
+			spawnThread(promise.__finally)
 		end
-		kill(promise.pid)
+		return reason
 	end
 	
-	promise.pid = spawn(function()
-		func(resolve, reject)
+	promise.thread = spawnThread(function()
+		executor(promise.__resolve, promise.__reject)
 	end)
-	
-	promise = setmetatable(promise, {
-		__tostring = function()
-			return string.format("Promise 0x%x [%s] (%s)", promise.id, promise.status, tostring(promise.value) or "nil")
-		end,
-	})
 	
 	return promise
 end
 
-local isRunning = false
-
+-- Start the event loop engine
 local function init()
-	if isRunning then
-		error("Node Event Loop already running", 2)
-	end
+	assert(not isRunning, "Event loop engine already running")
 	isRunning = true
-	while (function() 
-		local c = 0
-		for k,v in pairs(procs) do
-			c = c+1
+	
+	os.queueEvent("node_init")
+	
+	while (function() -- Execute loop if threads count is higher than 0
+		local count = 0
+		for k,v in pairs(threads) do
+			count = count+1
 		end
-		return c > 0
+		return count > 0
 	end)() do
 		local event = {coroutine.yield()}
-		for pid, proc in pairs(procs) do
-			if proc.kill then -- remove process if killed
-				procs[pid] = nil
+		for pid, thread in pairs(threads) do
+			if thread.tokill then
+				threads[pid] = nil -- Remove thread if killed (and don't resume it)
 			else
-				if proc.filter == nil or proc.filter == event[1] or event[1] == "terminate" then
-					local ok, par = coroutine.resume( proc.thread, unpack(event))
-					if not ok then
+				if thread.filter == nil or thread.filter == event[1] or event[1] == "terminate" then -- filter events
+					local ok, par = coroutine.resume( thread.thread, unpack(event))
+
+					
+					if ok then -- If ok par should be the event os.pullEvent expects
+						threads[pid].filter = par
+					else -- else the thread crashed
 						isRunning = false
-						error(par, 0)
-						break
-					else
-						procs[pid].filter = par
+						error(par, 0) -- terminate event loop engine because of error
+						break -- just in case
 					end
 				end
-				if coroutine.status(proc.thread) == "dead" then
-					procs[pid] = nil
+				
+				if coroutine.status(thread.thread) == "dead" then -- If thread died (ended with no errors) remove it from the threads table
+					threads[pid] = nil
 				end
 			end
 		end
 	end
+	
 	isRunning = false
 end
 
+-- Returns status
 local function status()
 	return isRunning
 end
 
+-- Export and set in _ENV --
 
 local node = {
 	on = on,
@@ -308,11 +365,14 @@ local node = {
 	clearInterval = clearInterval,
 	setTimeout = setTimeout,
 	clearTimeout = clearTimeout,
-	spawn = spawnFunction,
+	spawn = spawnThread,
 	promise = promise,
 	init = init,
+	status = status,
 }
 
-_ENV.node = node
+if _ENV then
+	_ENV.node = node
+end
 
 return node
